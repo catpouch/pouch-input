@@ -1,0 +1,8 @@
+[package]
+name = "pouch-input"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+enigo = "0.3.0"
+rppal = "0.19.0"
