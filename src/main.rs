@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use enigo::{Key, Enigo, Settings, Keyboard, Direction};
 use phf::Map;
 use phf_macros::phf_map;
+use std::{thread, time};
 
 // pin numbers that the rows and columns are connected to on pi
 const ROWS: [u8; 10] = [7, 8, 25, 24, 23, 4, 14, 15, 18, 17];
@@ -130,6 +131,29 @@ const KB_MODE: Map<u8, Key> = phf_map! {
 
 // handler for keypress events
 fn key_pressed(key: u8, modes: &mut (bool, bool), enigo: &mut Enigo) {
+    match &modes {
+        // main mode handling
+        (false, false) => {
+            let pressed = MAIN_MODE.get(&key).unwrap();
+            if pressed.0.is_some() {
+                enigo.text(pressed.0.unwrap()).unwrap();
+            }
+            if pressed.1.is_some() {
+                enigo.key(pressed.1.unwrap(), Direction::Click).unwrap();
+            }
+        }
+        // keyboard mode handling
+        (_, true) => 'kb: {
+            if key == 5 {break 'kb;}
+            let pressed = KB_MODE.get(&key).unwrap();
+            enigo.key(*pressed, Direction::Press).unwrap();
+        }
+        _ => ()
+    }
+}
+
+// handler for key release events (mainly just for kb mode)
+fn key_released(key: u8, modes: &mut (bool, bool), enigo: &mut Enigo) {
     match key {
         // second mode toggle (notice how it doesn't change if keyboard mode is active)
         0 => {
@@ -140,37 +164,15 @@ fn key_pressed(key: u8, modes: &mut (bool, bool), enigo: &mut Enigo) {
             modes.1 = !modes.1;
         }
         _ => {
+            // i know i don't really need a match statement here, but it might be necessary for second mode. may replace with if statement if it turns out not to be
             match &modes {
-                // main mode handling
-                (false, false) => {
-                    let pressed = MAIN_MODE.get(&key).unwrap();
-                    if pressed.0.is_some() {
-                        enigo.text(pressed.0.unwrap()).unwrap();
-                    }
-                    if pressed.1.is_some() {
-                        enigo.key(pressed.1.unwrap(), Direction::Click).unwrap();
-                    }
-                }
-                // keyboard mode handling
                 (_, true) => {
-                    let pressed = KB_MODE.get(&key).unwrap();
-                    enigo.key(*pressed, Direction::Press).unwrap();
+                    let released = KB_MODE.get(&key).unwrap();
+                    enigo.key(*released, Direction::Release).unwrap();
                 }
                 _ => ()
             }
         }
-    }
-}
-
-// handler for key release events (mainly just for kb mode)
-fn key_released(key: u8, modes: &mut (bool, bool), enigo: &mut Enigo) {
-    // i know i don't really need a match statement here, but it might be necessary for second mode. may replace with if statement if it turns out not to be
-    match &modes {
-        (_, true) => {
-            let pressed = KB_MODE.get(&key).unwrap();
-            enigo.key(*pressed, Direction::Release).unwrap();
-        }
-        _ => ()
     }
 }
 
@@ -203,6 +205,7 @@ fn main() {
             }
             column.set_low();
         }
+
         // all of the keys that were pressed this polling cycle but not the last one
         for key_down in curr_pressed_keys.difference(&prev_pressed_keys) {
             key_pressed(*key_down, &mut modes, &mut enigo);
@@ -212,5 +215,6 @@ fn main() {
             key_released(*key_up, &mut modes, &mut enigo);
         }
         prev_pressed_keys = curr_pressed_keys.clone(); // is there a better way to do this?
+        thread::sleep(time::Duration::from_millis(2)); // 500hz polling rate
     }
 }
