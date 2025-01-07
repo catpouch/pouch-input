@@ -1,4 +1,4 @@
-use rppal::gpio::{Gpio, OutputPin};
+use rppal::gpio::{Gpio, InputPin, OutputPin};
 use std::collections::HashSet;
 use enigo::{Key, Enigo, Settings, Keyboard, Direction};
 use phf::Map;
@@ -6,7 +6,7 @@ use phf_macros::phf_map;
 use std::{thread, time};
 
 // pin numbers that the rows and columns are connected to on pi
-const ROWS: [u8; 10] = [7, 8, 25, 24, 23, 4, 14, 15, 18, 17];
+const ROWS: [u8; 10] = [17, 18, 15, 14, 4, 23, 24, 25, 8, 7];
 const COLUMNS: [u8; 5] = [22, 27, 10, 9, 11];
 
 /*
@@ -17,7 +17,7 @@ every mode is just a different set up key mappings.
 */
 
 /*
-TODO: add mappings for second mode. also actually test any of this code
+TODO: add mappings for second mode.
 */
 
 // key mappings for the main operating mode.
@@ -46,7 +46,7 @@ const MAIN_MODE: Map<u8, (Option<&str>, Option<Key>)> = phf_map! {
     19u8 => (Some("round()"), None),
     20u8 => (Some("sqrt()"), Some(Key::LeftArrow)),
     21u8 => (None, Some(Key::F5)),
-    22u8 => (Some("["), None),
+    22u8 => (None, Some(Key::F7)),
     23u8 => (Some("]"), None),
     24u8 => (Some("^"), None),
     25u8 => (Some("^2"), None),
@@ -181,7 +181,7 @@ fn main() {
     let mut enigo: Enigo = Enigo::new(&Settings::default()).unwrap();
 
     // turning pin numbers into addressable pins
-    let row_pins: [OutputPin; 10] = ROWS.map(|x| gpio.get(x).unwrap().into_output());
+    let row_pins: [InputPin; 10] = ROWS.map(|x| gpio.get(x).unwrap().into_input_pulldown());
     let mut column_pins: [OutputPin; 5] = COLUMNS.map(|x| gpio.get(x).unwrap().into_output());
 
     // per polling cycle, set of keys that were pressed previously and set of keys that are currently being pressed
@@ -198,7 +198,7 @@ fn main() {
             column.set_high();
             for (j, row) in row_pins.iter().enumerate() {
                 // check each row per column
-                if row.is_set_high() {
+                if row.is_high() {
                     // add key number to currently pressed keys. top-left is key 0, increasing by 1 from left to right, top to bottom. ends on key 49 in bottom-right
                     curr_pressed_keys.insert((i + 5 * j).try_into().unwrap());
                 }
