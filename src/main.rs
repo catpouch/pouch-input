@@ -1,6 +1,7 @@
 use rppal::gpio::{Gpio, InputPin, OutputPin};
 use std::collections::HashSet;
-use enigo::{Key, Enigo, Settings, Keyboard, Direction};
+use mouse_keyboard_input::VirtualDevice;
+use mouse_keyboard_input::key_codes::*;
 use phf::Map;
 use phf_macros::phf_map;
 use std::{thread, time};
@@ -8,6 +9,10 @@ use std::{thread, time};
 // pin numbers that the rows and columns are connected to on pi
 const ROWS: [u8; 10] = [17, 18, 15, 14, 4, 23, 24, 25, 8, 7];
 const COLUMNS: [u8; 5] = [22, 27, 10, 9, 11];
+
+const KEY_LEFTPAREN: u16 = 65535;
+const KEY_RIGHTPAREN: u16 = 65534;
+const KEY_CARET: u16 = 65533;
 
 /*
 NOTE: buttons operate in three different modes. main mode, second mode, and keyboard mode.
@@ -23,141 +28,154 @@ TODO: add mappings for second mode.
 // key mappings for the main operating mode.
 // first value in tuple is text input, second value is a single keystroke that fires after text
 // needs to be this way because enigo doesn't allow "special" key inputs while using text function
-const MAIN_MODE: Map<u8, (Option<&str>, Option<Key>)> = phf_map! {
-    0u8 => (None, None),
-    1u8 => (None, Some(Key::F1)),
-    2u8 => (None, Some(Key::Escape)),
-    3u8 => (None, Some(Key::UpArrow)),
-    4u8 => (None, Some(Key::Backspace)),
-    5u8 => (None, None),
-    6u8 => (Some("x"), None),
-    7u8 => (None, Some(Key::LeftArrow)),
-    8u8 => (None, Some(Key::F2)),
-    9u8 => (None, Some(Key::RightArrow)),
-    10u8 => (Some("plot()"), Some(Key::LeftArrow)),
-    11u8 => (Some("table()"), Some(Key::LeftArrow)),
-    12u8 => (None, Some(Key::F3)),
-    13u8 => (None, Some(Key::DownArrow)),
-    14u8 => (None, Some(Key::F4)),
-    15u8 => (None, Some(Key::Tab)),
-    16u8 => (Some("sin()"), Some(Key::LeftArrow)),
-    17u8 => (Some("cos()"), Some(Key::LeftArrow)),
-    18u8 => (Some("tan()"), Some(Key::LeftArrow)),
-    19u8 => (Some("round()"), None),
-    20u8 => (Some("sqrt()"), Some(Key::LeftArrow)),
-    21u8 => (None, Some(Key::F5)),
-    22u8 => (None, Some(Key::F7)),
-    23u8 => (Some("]"), None),
-    24u8 => (Some("^"), None),
-    25u8 => (Some("^2"), None),
-    26u8 => (None, Some(Key::F6)),
-    27u8 => (Some("("), None),
-    28u8 => (Some(")"), None),
-    29u8 => (Some("/"), None),
-    30u8 => (Some("log()"), Some(Key::LeftArrow)),
-    31u8 => (Some("7"), None),
-    32u8 => (Some("8"), None),
-    33u8 => (Some("9"), None),
-    34u8 => (Some("*"), None),
-    35u8 => (Some("ln()"), Some(Key::LeftArrow)),
-    36u8 => (Some("4"), None),
-    37u8 => (Some("5"), None),
-    38u8 => (Some("6"), None),
-    39u8 => (Some("-"), None),
-    40u8 => (Some("="), None),
-    41u8 => (Some("1"), None),
-    42u8 => (Some("2"), None),
-    43u8 => (Some("3"), None),
-    44u8 => (Some("+"), None),
-    45u8 => (None, None),
-    46u8 => (Some("0"), None),
-    47u8 => (Some("."), None),
-    48u8 => (Some(","), None),
-    49u8 => (None, Some(Key::Return)),
+const MAIN_MODE: Map<u8, &[u16]> = phf_map! {
+    0u8 => (&[]),
+    1u8 => (&[KEY_F1]),
+    2u8 => (&[KEY_ESC]),
+    3u8 => (&[KEY_UP]),
+    4u8 => (&[KEY_BACKSPACE]),
+    5u8 => (&[]),
+    6u8 => (&[KEY_X]),
+    7u8 => (&[KEY_LEFT]),
+    8u8 => (&[]),
+    9u8 => (&[KEY_RIGHT]),
+    10u8 => (&[KEY_P, KEY_L, KEY_O, KEY_T, KEY_LEFTPAREN, KEY_RIGHTPAREN, KEY_LEFT]),
+    11u8 => (&[]),
+    12u8 => (&[KEY_F3]),
+    13u8 => (&[KEY_DOWN]),
+    14u8 => (&[KEY_F4]),
+    15u8 => (&[KEY_TAB]),
+    16u8 => (&[KEY_S, KEY_I, KEY_N, KEY_LEFTPAREN, KEY_RIGHTPAREN, KEY_LEFT]),
+    17u8 => (&[KEY_C, KEY_O, KEY_S, KEY_LEFTPAREN, KEY_RIGHTPAREN, KEY_LEFT]),
+    18u8 => (&[KEY_T, KEY_A, KEY_N, KEY_LEFTPAREN, KEY_RIGHTPAREN, KEY_LEFT]),
+    19u8 => (&[KEY_R, KEY_O, KEY_U, KEY_N, KEY_D, KEY_LEFTPAREN, KEY_RIGHTPAREN, KEY_LEFT]),
+    20u8 => (&[KEY_S, KEY_Q, KEY_R, KEY_T, KEY_LEFTPAREN, KEY_RIGHTPAREN, KEY_LEFT]),
+    21u8 => (&[KEY_F5]),
+    22u8 => (&[KEY_F7]),
+    23u8 => (&[]),
+    24u8 => (&[KEY_CARET]),
+    25u8 => (&[KEY_CARET, KEY_2]),
+    26u8 => (&[KEY_F6]),
+    27u8 => (&[KEY_LEFTPAREN]),
+    28u8 => (&[KEY_RIGHTPAREN]),
+    29u8 => (&[KEY_SLASH]),
+    30u8 => (&[KEY_L, KEY_O, KEY_G, KEY_LEFTPAREN, KEY_RIGHTPAREN, KEY_LEFT]),
+    31u8 => (&[KEY_7]),
+    32u8 => (&[KEY_8]),
+    33u8 => (&[KEY_9]),
+    34u8 => (&[KEY_KPASTERISK]),
+    35u8 => (&[KEY_L, KEY_N, KEY_LEFTPAREN, KEY_RIGHTPAREN, KEY_LEFT]),
+    36u8 => (&[KEY_4]),
+    37u8 => (&[KEY_5]),
+    38u8 => (&[KEY_6]),
+    39u8 => (&[KEY_MINUS]),
+    40u8 => (&[KEY_EQUAL]),
+    41u8 => (&[KEY_1]),
+    42u8 => (&[KEY_2]),
+    43u8 => (&[KEY_3]),
+    44u8 => (&[KEY_KPPLUS]),
+    45u8 => (&[]),
+    46u8 => (&[KEY_10]),
+    47u8 => (&[KEY_DOT]),
+    48u8 => (&[KEY_COMMA]),
+    49u8 => (&[KEY_ENTER]),
 };
 
 // key mappings for the keyboard mode
-const KB_MODE: Map<u8, Key> = phf_map! {
-    0u8 => (Key::Shift),
-    1u8 => (Key::Unicode('Z')),
-    2u8 => (Key::Unicode('A')),
-    3u8 => (Key::Unicode('Q')),
-    4u8 => (Key::Unicode('1')),
-    6u8 => (Key::Unicode('X')),
-    7u8 => (Key::Unicode('S')),
-    8u8 => (Key::Unicode('W')),
-    9u8 => (Key::Unicode('2')),
-    10u8 => (Key::Control),
-    11u8 => (Key::Unicode('C')),
-    12u8 => (Key::Unicode('D')),
-    13u8 => (Key::Unicode('E')),
-    14u8 => (Key::Unicode('3')),
-    15u8 => (Key::Alt),
-    16u8 => (Key::Unicode('V')),
-    17u8 => (Key::Unicode('F')),
-    18u8 => (Key::Unicode('R')),
-    19u8 => (Key::Unicode('4')),
-    20u8 => (Key::Space),
-    21u8 => (Key::Unicode('B')),
-    22u8 => (Key::Unicode('G')),
-    23u8 => (Key::Unicode('T')),
-    24u8 => (Key::Unicode('5')),
-    25u8 => (Key::LeftArrow),
-    26u8 => (Key::Unicode('N')),
-    27u8 => (Key::Unicode('H')),
-    28u8 => (Key::Unicode('Y')),
-    29u8 => (Key::Unicode('6')),
-    30u8 => (Key::UpArrow),
-    31u8 => (Key::Unicode('M')),
-    32u8 => (Key::Unicode('J')),
-    33u8 => (Key::Unicode('U')),
-    34u8 => (Key::Unicode('7')),
-    35u8 => (Key::DownArrow),
-    36u8 => (Key::Unicode(',')),
-    37u8 => (Key::Unicode('K')),
-    38u8 => (Key::Unicode('I')),
-    39u8 => (Key::Unicode('8')),
-    40u8 => (Key::RightArrow),
-    41u8 => (Key::Unicode('.')),
-    42u8 => (Key::Unicode('L')),
-    43u8 => (Key::Unicode('O')),
-    44u8 => (Key::Unicode('9')),
-    45u8 => (Key::Unicode('\'')),
-    46u8 => (Key::Unicode('/')),
-    47u8 => (Key::Unicode(';')),
-    48u8 => (Key::Unicode('P')),
-    49u8 => (Key::Unicode('0')),
+const KB_MODE: Map<u8, u16> = phf_map! {
+    0u8 => (KEY_LEFTSHIFT),
+    1u8 => (KEY_Z),
+    2u8 => (KEY_A),
+    3u8 => (KEY_Q),
+    4u8 => (KEY_1),
+    6u8 => (KEY_X),
+    7u8 => (KEY_S),
+    8u8 => (KEY_W),
+    9u8 => (KEY_2),
+    10u8 => (KEY_LEFTCTRL),
+    11u8 => (KEY_C),
+    12u8 => (KEY_D),
+    13u8 => (KEY_E),
+    14u8 => (KEY_3),
+    15u8 => (KEY_LEFTALT),
+    16u8 => (KEY_V),
+    17u8 => (KEY_F),
+    18u8 => (KEY_R),
+    19u8 => (KEY_4),
+    20u8 => (KEY_SPACE),
+    21u8 => (KEY_B),
+    22u8 => (KEY_G),
+    23u8 => (KEY_T),
+    24u8 => (KEY_5),
+    25u8 => (KEY_ENTER),
+    26u8 => (KEY_N),
+    27u8 => (KEY_H),
+    28u8 => (KEY_Y),
+    29u8 => (KEY_6),
+    30u8 => (KEY_BACKSPACE),
+    31u8 => (KEY_M),
+    32u8 => (KEY_J),
+    33u8 => (KEY_U),
+    34u8 => (KEY_7),
+    35u8 => (KEY_EQUAL),
+    36u8 => (KEY_COMMA),
+    37u8 => (KEY_K),
+    38u8 => (KEY_I),
+    39u8 => (KEY_8),
+    40u8 => (KEY_MINUS),
+    41u8 => (KEY_DOT),
+    42u8 => (KEY_L),
+    43u8 => (KEY_O),
+    44u8 => (KEY_9),
+    46u8 => (KEY_SLASH),
+    47u8 => (KEY_APOSTROPHE),
+    48u8 => (KEY_P),
+    49u8 => (KEY_10),
 };
 
 // handler for keypress events
-fn key_pressed(key: u8, modes: &mut (bool, bool), enigo: &mut Enigo) {
+fn key_pressed(key: u8, modes: &mut (bool, bool), device: &mut VirtualDevice) {
     match &modes {
         // main mode handling
         (false, false) => {
             let pressed = MAIN_MODE.get(&key).unwrap();
-            if pressed.0.is_some() {
-                enigo.text(pressed.0.unwrap()).unwrap();
-            }
-            if pressed.1.is_some() {
-                enigo.key(pressed.1.unwrap(), Direction::Click).unwrap();
+            for key in *pressed {
+                match key {
+                    &KEY_LEFTPAREN => {
+                        let _ = device.press(KEY_LEFTSHIFT);
+                        let _ = device.click(KEY_9);
+                        let _ = device.release(KEY_LEFTSHIFT);
+                    }
+                    &KEY_RIGHTPAREN => {
+                        let _ = device.press(KEY_LEFTSHIFT);
+                        let _ = device.click(KEY_10);
+                        let _ = device.release(KEY_LEFTSHIFT);
+                    }
+                    &KEY_CARET => {
+                        let _ = device.press(KEY_LEFTSHIFT);
+                        let _ = device.click(KEY_6);
+                        let _ = device.release(KEY_LEFTSHIFT);
+                    }
+                    _ => { let _ = device.click(*key); }
+                }
             }
         }
         // keyboard mode handling
         (_, true) => 'kb: {
             if key == 5 {break 'kb;}
             let pressed = KB_MODE.get(&key).unwrap();
-            enigo.key(*pressed, Direction::Press).unwrap();
+            let _ = device.press(*pressed);
         }
         _ => ()
     }
 }
 
 // handler for key release events (mainly just for kb mode)
-fn key_released(key: u8, modes: &mut (bool, bool), enigo: &mut Enigo) {
+fn key_released(key: u8, modes: &mut (bool, bool), device: &mut VirtualDevice) {
     match key {
         // second mode toggle (notice how it doesn't change if keyboard mode is active)
-        0 => {
-            if !modes.1 {modes.0 = !modes.0;}
+        0 if !modes.1 => {
+            modes.0 = !modes.0;
         },
         // keyboard mode toggle
         5 => {
@@ -168,7 +186,7 @@ fn key_released(key: u8, modes: &mut (bool, bool), enigo: &mut Enigo) {
             match &modes {
                 (_, true) => {
                     let released = KB_MODE.get(&key).unwrap();
-                    enigo.key(*released, Direction::Release).unwrap();
+                    let _ = device.release(*released);
                 }
                 _ => ()
             }
@@ -178,7 +196,8 @@ fn key_released(key: u8, modes: &mut (bool, bool), enigo: &mut Enigo) {
 
 fn main() {
     let gpio: Gpio = Gpio::new().unwrap();
-    let mut enigo: Enigo = Enigo::new(&Settings::default()).unwrap();
+    // let mut enigo: Enigo = Enigo::new(&Settings::default()).unwrap();
+    let mut device = VirtualDevice::default().unwrap();
 
     // turning pin numbers into addressable pins
     let row_pins: [InputPin; 10] = ROWS.map(|x| gpio.get(x).unwrap().into_input_pulldown());
@@ -208,11 +227,11 @@ fn main() {
 
         // all of the keys that were pressed this polling cycle but not the last one
         for key_down in curr_pressed_keys.difference(&prev_pressed_keys) {
-            key_pressed(*key_down, &mut modes, &mut enigo);
+            key_pressed(*key_down, &mut modes, &mut device);
         }
         // all of the keys that were pressed in the previous polling cycle but not this one
         for key_up in prev_pressed_keys.difference(&curr_pressed_keys) {
-            key_released(*key_up, &mut modes, &mut enigo);
+            key_released(*key_up, &mut modes, &mut device);
         }
         prev_pressed_keys = curr_pressed_keys.clone(); // is there a better way to do this?
         thread::sleep(time::Duration::from_millis(2)); // 500hz polling rate
